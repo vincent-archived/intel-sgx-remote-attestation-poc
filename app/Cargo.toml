@@ -1,0 +1,13 @@
+[package]
+name = "app"
+version = "1.0.0"
+authors = ["The Teaclave Authors"]
+build = "build.rs"
+
+[dependencies]
+sgx_types = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
+sgx_urts = { git = "https://github.com/apache/teaclave-sgx-sdk.git" }
+
+[patch.'https://github.com/apache/teaclave-sgx-sdk.git']
+sgx_types = { rev = "v1.1.5", git = "https://github.com/apache/incubator-teaclave-sgx-sdk" }
+sgx_urts = { rev = "v1.1.5", git = "https://github.com/apache/incubator-teaclave-sgx-sdk" }

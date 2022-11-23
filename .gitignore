@@ -1,0 +1,11 @@
+/app/target
+/app/*.a
+/app/*.o
+/app/Enclave_*.*
+/enclave/*.so
+/enclave/target
+/enclave/*.o
+/enclave/Enclave_*.*
+/bin/*.so
+/bin/app
+/lib/*.a
