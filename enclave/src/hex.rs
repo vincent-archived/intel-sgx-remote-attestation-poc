@@ -1,5 +1,3 @@
-// hex encoder and decoder used by rust-protobuf unittests
-
 use sgx_types::*;
 use std::char;
 use std::prelude::v1::*;

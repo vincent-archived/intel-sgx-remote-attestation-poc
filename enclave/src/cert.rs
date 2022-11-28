@@ -1,5 +1,5 @@
 use std::prelude::v1::*;
-use std::{str};
+use std::str;
 
 
 pub fn percent_decode(orig: String) -> String {
