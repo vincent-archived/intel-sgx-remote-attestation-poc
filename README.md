@@ -2,7 +2,7 @@
 ![](https://docs.lcp.network/assets/images/remote-attestation-5b648793abb56c1bcb64d02828771ad2.png)
 
 ## Remote Attestation
-远程认证的过程中, 假设远程认证方 B 要认证 enclave A, A 先执行 EREPORT 指令, 将 A 的身份和附加信息组合生成 REPORT 结构, 利用引用 enclave (称其为 Q) 的报告密钥生成一个 MAC, 连同报告结构一起发给 Q, Q 通过该结构验证 A 是否运行于同一平台, 然后将它封装为一个引用结构体 QUOTE, 并使用 EPID 进行签名, 将 QUOTE 发送给远程认证者.
+远程认证的过程中, 假设远程认证方 B 要认证 enclave A, A 先执行 EREPORT 指令, 将 A 的身份和附加信息组合生成 REPORT 结构, 取出本地密钥库版本调用 Intel 接口判断是否有已知安全风险。然后利用引用 enclave (称其为 Q) 的报告密钥生成一个 MAC, 连同报告结构一起发给 Q, Q 通过该结构验证 A 是否运行于同一平台, 然后将它封装为一个引用结构体 QUOTE, 并使用 EPID 进行签名, 将 QUOTE 发送给远程认证者.
 
 远程认证者获取到 QUOTE 发送 QUOTE 到 Intel IAS, IAS 返回认证结果, 如果返回 OK, 则远程认证者解析 QUOTE 获取 REPORT 结构中的附加信息(此示例为公钥).
 
