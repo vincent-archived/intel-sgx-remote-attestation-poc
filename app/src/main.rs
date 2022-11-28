@@ -7,8 +7,8 @@ use sgx_types::*;
 use sgx_urts::SgxEnclave;
 
 use std::env;
-use std::net::{SocketAddr, TcpListener, TcpStream};
-use std::os::unix::io::{AsRawFd, IntoRawFd};
+use std::net::{SocketAddr, TcpStream};
+use std::os::unix::io::{IntoRawFd};
 use std::str;
 
 const BUFFER_SIZE: usize = 1024;
@@ -112,14 +112,7 @@ pub extern "C" fn ocall_get_quote(
     ret
 }
 
-#[no_mangle]
-pub extern "C" fn ocall_get_update_info(
-    platform_blob: *const sgx_platform_info_t,
-    enclave_trusted: i32,
-    update_info: *mut sgx_update_info_bit_t,
-) -> sgx_status_t {
-    unsafe { sgx_report_attestation_status(platform_blob, enclave_trusted, update_info) }
-}
+
 
 fn init_enclave() -> SgxResult<SgxEnclave> {
     let mut launch_token: sgx_launch_token_t = [0; 1024];
@@ -166,10 +159,9 @@ fn main() {
 
     println!("Logs: App Running, This is normal world Rust Sting \n");
 
-    // let socket = TcpStream::connect("localhost:3443").unwrap();
+  
     let mut retval = sgx_status_t::SGX_SUCCESS;
-    let result =
-        unsafe { run_poc(enclave.geteid(), &mut retval, sign_type) };
+    let result = unsafe { run_poc(enclave.geteid(), &mut retval, sign_type) };
     match result {
         sgx_status_t::SGX_SUCCESS => {
             println!("ECALL success!");
