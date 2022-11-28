@@ -23,13 +23,13 @@ enclave {
     from "sgx_net.edl" import *;
     from "sgx_time.edl" import *;
     from "sgx_tstdc.edl" import *;
+    from "sgx_tprotected_fs.edl" import *;
 
     include "sgx_quote.h"
 
 
     trusted {
-	public sgx_status_t run_server(int fd,sgx_quote_sign_type_t quote_type);
-	public sgx_status_t run_client(int fd,sgx_quote_sign_type_t quote_type);
+	public sgx_status_t run_poc(sgx_quote_sign_type_t quote_type);
     };
 
     untrusted {

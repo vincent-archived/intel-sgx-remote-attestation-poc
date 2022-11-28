@@ -41,8 +41,10 @@ extern crate num_bigint;
 extern crate serde_json;
 extern crate chrono;
 extern crate webpki_roots;
+extern crate crypto;
 
 use std::backtrace::{self, PrintFormat};
+use crypto::EnclavePublicKey;
 use sgx_types::*;
 use sgx_tse::*;
 //use sgx_trts::trts::{rsgx_raw_is_outside_enclave, rsgx_lfence};
@@ -60,6 +62,9 @@ use std::io::{Write, Read};
 use std::untrusted::fs;
 use std::vec::Vec;
 use itertools::Itertools;
+use crypto::KeyManager;
+use crypto::Signer;
+use crypto::Verifier;
 
 mod cert;
 mod hex;
@@ -90,11 +95,11 @@ extern "C" {
 
 
 fn parse_response_attn_report(resp : &[u8]) -> (String, String, String){
-    println!("parse_response_attn_report");
+    println!("Logs: Parse response attn report \n");
     let mut headers = [httparse::EMPTY_HEADER; 16];
     let mut respp   = httparse::Response::new(&mut headers);
     let result = respp.parse(resp);
-    println!("parse result {:?}", result);
+    // println!("parse result {:?}", result);
 
     let msg : &'static str;
 
@@ -107,10 +112,10 @@ fn parse_response_attn_report(resp : &[u8]) -> (String, String, String){
             a temporary overloading or maintenance). This is a
             temporary state – the same request can be repeated after
             some time. ",
-        _ => {println!("DBG:{}", respp.code.unwrap()); msg = "Unknown error occured"},
+        _ => {},
     }
 
-    println!("{}", msg);
+    //println!("{}", msg);
     let mut len_num : u32 = 0;
 
     let mut sig = String::new();
@@ -124,7 +129,7 @@ fn parse_response_attn_report(resp : &[u8]) -> (String, String, String){
             "Content-Length" => {
                 let len_str = String::from_utf8(h.value.to_vec()).unwrap();
                 len_num = len_str.parse::<u32>().unwrap();
-                println!("content length = {}", len_num);
+                // println!("content length = {}", len_num);
             }
             "X-IASReport-Signature" => sig = str::from_utf8(h.value).unwrap().to_string(),
             "X-IASReport-Signing-Certificate" => cert = str::from_utf8(h.value).unwrap().to_string(),
@@ -142,7 +147,7 @@ fn parse_response_attn_report(resp : &[u8]) -> (String, String, String){
         let header_len = result.unwrap().unwrap();
         let resp_body = &resp[header_len..];
         attn_report = str::from_utf8(resp_body).unwrap().to_string();
-        println!("Attestation report: {}", attn_report);
+        println!("Logs: Attestation report: {} \n", attn_report);
     }
 
     // len_num == 0
@@ -151,12 +156,12 @@ fn parse_response_attn_report(resp : &[u8]) -> (String, String, String){
 
 
 fn parse_response_sigrl(resp : &[u8]) -> Vec<u8> {
-    println!("parse_response_sigrl");
+    println!("Logs: Parse response sigrl \n");
     let mut headers = [httparse::EMPTY_HEADER; 16];
     let mut respp   = httparse::Response::new(&mut headers);
     let result = respp.parse(resp);
-    println!("parse result {:?}", result);
-    println!("parse response{:?}", respp);
+    //println!("parse result {:?}", result);
+    //println!("parse response{:?}", respp);
 
     let msg : &'static str;
 
@@ -172,7 +177,7 @@ fn parse_response_sigrl(resp : &[u8]) -> Vec<u8> {
         _ => msg = "Unknown error occured",
     }
 
-    println!("{}", msg);
+    // println!("{}", msg);
     let mut len_num : u32 = 0;
 
     for i in 0..respp.headers.len() {
@@ -180,16 +185,20 @@ fn parse_response_sigrl(resp : &[u8]) -> Vec<u8> {
         if h.name == "content-length" {
             let len_str = String::from_utf8(h.value.to_vec()).unwrap();
             len_num = len_str.parse::<u32>().unwrap();
-            println!("content length = {}", len_num);
+            // println!("content length = {}", len_num);
         }
     }
 
     if len_num != 0 {
         let header_len = result.unwrap().unwrap();
         let resp_body = &resp[header_len..];
-        println!("Base64-encoded SigRL: {:?}", resp_body);
+        println!("Base64-encoded SigRL: {:?} \n", resp_body);
 
         return base64::decode(str::from_utf8(resp_body).unwrap()).unwrap();
+    }
+
+    if len_num == 0 {
+        println!("Logs: This EPID group ID Successful \n");
     }
 
     // len_num == 0
@@ -206,7 +215,7 @@ pub fn make_ias_client_config() -> rustls::ClientConfig {
 
 
 pub fn get_sigrl_from_intel(fd : c_int, gid : u32) -> Vec<u8> {
-    println!("get_sigrl_from_intel fd = {:?}", fd);
+    //println!("get_sigrl_from_intel fd = {:?}", fd);
     let config = make_ias_client_config();
     //let sigrl_arg = SigRLArg { group_id : gid };
     //let sigrl_req = sigrl_arg.to_httpreq();
@@ -227,7 +236,7 @@ pub fn get_sigrl_from_intel(fd : c_int, gid : u32) -> Vec<u8> {
     let _result = tls.write(req.as_bytes());
     let mut plaintext = Vec::new();
 
-    println!("write complete");
+    // println!("write complete");
 
     match tls.read_to_end(&mut plaintext) {
         Ok(_) => (),
@@ -236,19 +245,21 @@ pub fn get_sigrl_from_intel(fd : c_int, gid : u32) -> Vec<u8> {
             panic!("haha");
         }
     }
-    println!("read_to_end complete");
+    // println!("read_to_end complete");
     let resp_string = String::from_utf8(plaintext.clone()).unwrap();
 
-    println!("{}", resp_string);
+    // println!("{}", resp_string);
 
     parse_response_sigrl(&plaintext)
 }
 
 // TODO: support pse
 pub fn get_report_from_intel(fd : c_int, quote : Vec<u8>) -> (String, String, String) {
-    println!("get_report_from_intel fd = {:?}", fd);
+    println!("Logs: Start verify quote from intel ias server \n");
+    // println!("get_report_from_intel fd = {:?}", fd);
     let config = make_ias_client_config();
     let encoded_quote = base64::encode(&quote[..]);
+    println!("Logs: Generate quote to json \n");
     let encoded_json = format!("{{\"isvEnclaveQuote\":\"{}\"}}\r\n", encoded_quote);
 
     let ias_key = get_ias_api_key();
@@ -268,13 +279,13 @@ pub fn get_report_from_intel(fd : c_int, quote : Vec<u8>) -> (String, String, St
     let _result = tls.write(req.as_bytes());
     let mut plaintext = Vec::new();
 
-    println!("write complete");
+    // println!("write complete");
 
     tls.read_to_end(&mut plaintext).unwrap();
-    println!("read_to_end complete");
+    // println!("read_to_end complete");
     let resp_string = String::from_utf8(plaintext.clone()).unwrap();
 
-    println!("resp_string = {}", resp_string);
+    // println!("resp_string = {}", resp_string);
 
     let (attn_report, sig, cert) = parse_response_attn_report(&plaintext);
 
@@ -289,7 +300,8 @@ fn as_u32_le(array: &[u8; 4]) -> u32 {
 }
 
 #[allow(const_err)]
-pub fn create_attestation_report(pub_k: &sgx_ec256_public_t, sign_type: sgx_quote_sign_type_t) -> Result<(String, String, String), sgx_status_t> {
+pub fn create_attestation_report(report_data: &sgx_report_data_t, sign_type: sgx_quote_sign_type_t) -> Result<(String, String, String), sgx_status_t> {
+
     // Workflow:
     // (1) ocall to get the target_info structure (ti) and epid group id (eg)
     // (1.5) get sigrl
@@ -301,13 +313,17 @@ pub fn create_attestation_report(pub_k: &sgx_ec256_public_t, sign_type: sgx_quot
     let mut eg : sgx_epid_group_id_t = sgx_epid_group_id_t::default();
     let mut rt : sgx_status_t = sgx_status_t::SGX_ERROR_UNEXPECTED;
 
+    println!("Logs: Generate enclave target info \n");
+
+    
+
     let res = unsafe {
         ocall_sgx_init_quote(&mut rt as *mut sgx_status_t,
                              &mut ti as *mut sgx_target_info_t,
                              &mut eg as *mut sgx_epid_group_id_t)
     };
 
-    println!("eg = {:?}", eg);
+    
 
     if res != sgx_status_t::SGX_SUCCESS {
         return Err(res);
@@ -338,33 +354,40 @@ pub fn create_attestation_report(pub_k: &sgx_ec256_public_t, sign_type: sgx_quot
     //println!("Got ias_sock = {}", ias_sock);
 
     // Now sigrl_vec is the revocation list, a vec<u8>
-    let sigrl_vec : Vec<u8> = get_sigrl_from_intel(ias_sock, eg_num);
+
+
 
     // (2) Generate the report
     // Fill ecc256 public key into report_data
-    let mut report_data: sgx_report_data_t = sgx_report_data_t::default();
-    let mut pub_k_gx = pub_k.gx.clone();
-    pub_k_gx.reverse();
-    let mut pub_k_gy = pub_k.gy.clone();
-    pub_k_gy.reverse();
-    report_data.d[..32].clone_from_slice(&pub_k_gx);
-    report_data.d[32..].clone_from_slice(&pub_k_gy);
+    // let mut report_data: sgx_report_data_t = sgx_report_data_t::default();
+    // let mut pub_k_gx = pub_k.gx.clone();
+    // pub_k_gx.reverse();
+    // let mut pub_k_gy = pub_k.gy.clone();
+    // pub_k_gy.reverse();
+    // report_data.d[..32].clone_from_slice(&pub_k_gx);
+    // report_data.d[32..].clone_from_slice(&pub_k_gy);
 
     let rep = match rsgx_create_report(&ti, &report_data) {
         Ok(r) =>{
-            println!("Report creation => success {:?}", r.body.mr_signer.m);
+            println!("Log: Use enclave target info generat report creation success, This report mr_signer = {:?} \n ", r.body.mr_signer.m);
             Some(r)
         },
         Err(e) =>{
-            println!("Report creation => failed {:?}", e);
+            println!("Log: Report creation => failed {:?}", e);
             None
         },
     };
 
+    println!("Logs: Get sigrl from intel \n");
+    println!("Logs: Local eg = {:?} \n", eg);
+    let sigrl_vec : Vec<u8> = get_sigrl_from_intel(ias_sock, eg_num);
+
+    
+
     let mut quote_nonce = sgx_quote_nonce_t { rand : [0;16] };
     let mut os_rng = os::SgxRng::new().unwrap();
     os_rng.fill_bytes(&mut quote_nonce.rand);
-    println!("rand finished");
+    // println!("rand finished");
     let mut qe_report = sgx_report_t::default();
     const RET_QUOTE_BUF_LEN : u32 = 2048;
     let mut return_quote_buf : [u8; RET_QUOTE_BUF_LEN as usize] = [0;RET_QUOTE_BUF_LEN as usize];
@@ -425,7 +448,7 @@ pub fn create_attestation_report(pub_k: &sgx_ec256_public_t, sign_type: sgx_quot
     // Added 09-28-2018
     // Perform a check on qe_report to verify if the qe_report is valid
     match rsgx_verify_report(&qe_report) {
-        Ok(()) => println!("rsgx_verify_report passed!"),
+        Ok(()) => println!("Logs: rsgx_verify_report passed! \n"),
         Err(x) => {
             println!("rsgx_verify_report failed with {:?}", x);
             return Err(x);
@@ -440,7 +463,7 @@ pub fn create_attestation_report(pub_k: &sgx_ec256_public_t, sign_type: sgx_quot
         return Err(sgx_status_t::SGX_ERROR_UNEXPECTED);
     }
 
-    println!("qe_report check passed");
+    println!("Logs: qe_report check passed! \n");
 
     // Debug
     // for i in 0..quote_len {
@@ -462,11 +485,11 @@ pub fn create_attestation_report(pub_k: &sgx_ec256_public_t, sign_type: sgx_quot
     let rhs_hash = rsgx_sha256_slice(&rhs_vec[..]).unwrap();
     let lhs_hash = &qe_report.body.report_data.d[..32];
 
-    println!("rhs hash = {:02X}", rhs_hash.iter().format(""));
-    println!("report hs= {:02X}", lhs_hash.iter().format(""));
+    // println!("rhs hash = {:02X}", rhs_hash.iter().format(""));
+    // println!("report hs= {:02X}", lhs_hash.iter().format(""));
 
     if rhs_hash != lhs_hash {
-        println!("Quote is tampered!");
+        println!("Logs: Quote is tampered!");
         return Err(sgx_status_t::SGX_ERROR_UNEXPECTED);
     }
 
@@ -476,6 +499,8 @@ pub fn create_attestation_report(pub_k: &sgx_ec256_public_t, sign_type: sgx_quot
                              &mut ias_sock as *mut i32)
     };
 
+    println!("Logs: Quote data => \n{:?}\n", &quote_vec);
+
     if res != sgx_status_t::SGX_SUCCESS {
         return Err(res);
     }
@@ -484,8 +509,25 @@ pub fn create_attestation_report(pub_k: &sgx_ec256_public_t, sign_type: sgx_quot
         return Err(rt);
     }
 
-    let (attn_report, sig, cert) = get_report_from_intel(ias_sock, quote_vec);
-    Ok((attn_report, sig, cert))
+   
+    let (attn_report, sig, cert) = get_report_from_intel(ias_sock, quote_vec.clone());
+    
+
+    let sgx_quote: sgx_quote_t = unsafe{ptr::read(quote_vec.as_ptr() as *const _)};
+
+        // Borrow of packed field is unsafe in future Rust releases
+        // ATTENTION
+        // DO SECURITY CHECK ON DEMAND
+        // DO SECURITY CHECK ON DEMAND
+        // DO SECURITY CHECK ON DEMAND
+        unsafe{
+            println!("Logs: sgx quote version = {}", sgx_quote.version);
+            println!("Logs: sgx quote signature type = {}", sgx_quote.sign_type);
+            println!("Logs: sgx quote report_data = {:?}", sgx_quote.report_body.report_data.d);
+            println!("Logs: sgx quote mr_enclave = {:?}", sgx_quote.report_body.mr_enclave.m);
+            println!("Logs: sgx quote mr_signer = {:?}", sgx_quote.report_body.mr_signer.m);
+        }
+        Ok((attn_report, sig, cert))
 }
 
 fn load_spid(filename: &str) -> sgx_spid_t {
@@ -579,117 +621,78 @@ impl rustls::ServerCertVerifier for ServerAuth {
     }
 }
 
+
 #[no_mangle]
-pub extern "C" fn run_server(socket_fd : c_int, sign_type: sgx_quote_sign_type_t) -> sgx_status_t {
+pub extern "C" fn run_poc(sign_type: sgx_quote_sign_type_t) -> sgx_status_t {
     let _ = backtrace::enable_backtrace("enclave.signed.so", PrintFormat::Short);
 
-    // Generate Keypair
-    let ecc_handle = SgxEccHandle::new();
-    let _result = ecc_handle.open();
-    let (prv_k, pub_k) = ecc_handle.create_key_pair().unwrap();
+    let rust_raw_string = "Logs: This is a in-Enclave Rust string! \n";
+    
+    
+    let hello_string = String::from(rust_raw_string);
 
-    let (attn_report, sig, cert) = match create_attestation_report(&pub_k, sign_type) {
+    
+    println!("{}", &hello_string);
+
+    let mut key_manager = KeyManager::new(String::from("/home/ubuntu/"));
+
+    let kp = match key_manager.get_enclave_key() {
+        Some(kp) => {
+            println!("Logs: Has been created enclave key, now read! \n");
+            kp
+        },
+        None => {
+            println!("Logs: Not found enclave key, now create \n");
+            key_manager.create_enclave_key().unwrap()
+        },
+    };
+
+    println!("Logs: Get enclave public key! \n");
+
+    println!("{:?} \n\nBytes: {:?} \n", kp.get_pubkey(), kp.get_pubkey().as_bytes());
+
+    println!("Logs: Sign some things msg! \n");
+
+    let some_things_msg = "hello world!";
+
+    let sign_msg = Signer::sign(kp, &some_things_msg.as_bytes());
+
+    println!("{:?}  \n", sign_msg);
+
+    println!("Logs: Verify sign msg! \n");
+
+    let verify = Verifier::verify(&kp.get_pubkey(), &some_things_msg.as_bytes(), &sign_msg.unwrap());
+
+    println!("{:?}  \n", verify);
+
+
+    // let spid = "2F4648F96EF4F9CD433D1B8DB8C33E38";
+
+    // let pk = "19f4076a892e4a9683288e8c824eeaf2";
+
+    // let sk = "19f4076a892e4a9683288e8c824eeaf2";
+
+    println!("Logs: Generate sgx report body is include enclave public key! \n");
+
+    // let target_info : sgx_target_info_t = sgx_target_info_t::default();
+
+    // let eg : sgx_epid_group_id_t = sgx_epid_group_id_t::default();
+
+
+    let report_data = kp.get_pubkey().as_report_data();
+
+    // let report = rsgx_create_report(&target_info, &report_data).unwrap();
+
+    // println!("Logs:  Report creation => success {:?}", report.body.mr_signer.m);
+
+
+    let (attn_report, sig, cert) = match create_attestation_report(&report_data, sign_type) {
         Ok(r) => r,
         Err(e) => {
             println!("Error in create_attestation_report: {:?}", e);
             return e;
         }
     };
-
-    let payload = attn_report + "|" + &sig + "|" + &cert;
-    let (key_der, cert_der) = match cert::gen_ecc_cert(payload, &prv_k, &pub_k, &ecc_handle) {
-        Ok(r) => r,
-        Err(e) => {
-            println!("Error in gen_ecc_cert: {:?}", e);
-            return e;
-        }
-    };
-    let _result = ecc_handle.close();
-
-
-    let mut cfg = rustls::ServerConfig::new(Arc::new(ClientAuth::new(true)));
-    let mut certs = Vec::new();
-    certs.push(rustls::Certificate(cert_der));
-    let privkey = rustls::PrivateKey(key_der);
-
-    cfg.set_single_cert_with_ocsp_and_sct(certs, privkey, vec![], vec![]).unwrap();
-
-    let mut sess = rustls::ServerSession::new(&Arc::new(cfg));
-    let mut conn = TcpStream::new(socket_fd).unwrap();
-
-    let mut tls = rustls::Stream::new(&mut sess, &mut conn);
-    let mut plaintext = [0u8;1024]; //Vec::new();
-    match tls.read(&mut plaintext) {
-        Ok(_) => println!("Client said: {}", str::from_utf8(&plaintext).unwrap()),
-        Err(e) => {
-            println!("Error in read_to_end: {:?}", e);
-            panic!("");
-        }
-    };
-
-    tls.write("hello back".as_bytes()).unwrap();
-
-    sgx_status_t::SGX_SUCCESS
-}
-
-
-#[no_mangle]
-pub extern "C" fn run_client(socket_fd : c_int, sign_type: sgx_quote_sign_type_t) -> sgx_status_t {
-    let _ = backtrace::enable_backtrace("enclave.signed.so", PrintFormat::Short);
-
-    // Generate Keypair
-    let ecc_handle = SgxEccHandle::new();
-    ecc_handle.open().unwrap();
-    let (prv_k, pub_k) = ecc_handle.create_key_pair().unwrap();
-
-    let (attn_report, sig, cert) = match create_attestation_report(&pub_k, sign_type) {
-        Ok(r) => r,
-        Err(e) => {
-            println!("Error in create_attestation_report: {:?}", e);
-            return e;
-        }
-    };
-
-    let payload = attn_report + "|" + &sig + "|" + &cert;
-
-    let (key_der, cert_der) = match cert::gen_ecc_cert(payload, &prv_k, &pub_k, &ecc_handle) {
-        Ok(r) => r,
-        Err(e) => {
-            println!("Error in gen_ecc_cert: {:?}", e);
-            return e;
-        }
-    };
-    ecc_handle.close().unwrap();
-
-
-    let mut cfg = rustls::ClientConfig::new();
-    let mut certs = Vec::new();
-    certs.push(rustls::Certificate(cert_der));
-    let privkey = rustls::PrivateKey(key_der);
-
-    cfg.set_single_client_cert(certs, privkey).unwrap();
-    cfg.dangerous().set_certificate_verifier(Arc::new(ServerAuth::new(true)));
-    cfg.versions.clear();
-    cfg.versions.push(rustls::ProtocolVersion::TLSv1_2);
-
-    let dns_name = webpki::DNSNameRef::try_from_ascii_str("localhost").unwrap();
-    let mut sess = rustls::ClientSession::new(&Arc::new(cfg), dns_name);
-    let mut conn = TcpStream::new(socket_fd).unwrap();
-
-    let mut tls = rustls::Stream::new(&mut sess, &mut conn);
-
-    tls.write("hello".as_bytes()).unwrap();
-
-    let mut plaintext = Vec::new();
-    match tls.read_to_end(&mut plaintext) {
-        Ok(_) => {
-            println!("Server replied: {}", str::from_utf8(&plaintext).unwrap());
-        }
-        Err(ref err) if err.kind() == io::ErrorKind::ConnectionAborted => {
-            println!("EOF (tls)");
-        }
-        Err(e) => println!("Error in read_to_end: {:?}", e),
-    }
 
     sgx_status_t::SGX_SUCCESS
 }
