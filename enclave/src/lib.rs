@@ -65,6 +65,7 @@ use itertools::Itertools;
 use crypto::KeyManager;
 use crypto::Signer;
 use crypto::Verifier;
+use crypto::Address;
 
 mod cert;
 mod hex;
@@ -515,6 +516,12 @@ pub fn create_attestation_report(report_data: &sgx_report_data_t, sign_type: sgx
 
     let sgx_quote: sgx_quote_t = unsafe{ptr::read(quote_vec.as_ptr() as *const _)};
 
+    let data = sgx_quote.report_body.report_data.d.clone();
+
+    let address = Address::from(&data[..20]);
+
+    println!("Logs: sgx quote report_data public key hex {:?}", address.to_hex_string());
+
         // Borrow of packed field is unsafe in future Rust releases
         // ATTENTION
         // DO SECURITY CHECK ON DEMAND
@@ -650,6 +657,7 @@ pub extern "C" fn run_poc(sign_type: sgx_quote_sign_type_t) -> sgx_status_t {
     println!("Logs: Get enclave public key! \n");
 
     println!("{:?} \n\nBytes: {:?} \n", kp.get_pubkey(), kp.get_pubkey().as_bytes());
+    println!("Hex: {} \n", Address::from(&kp.get_pubkey()).to_hex_string());
 
     println!("Logs: Sign some things msg! \n");
 
